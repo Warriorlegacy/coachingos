@@ -2,6 +2,10 @@
 
 > **Mobile-First Operating System for Independent Tutors & Coaching Centres**
 
+**Live Production App:** [https://coachingos-app-qbyu.netlify.app](https://coachingos-app-qbyu.netlify.app)  
+**GitHub Repository:** [https://github.com/Warriorlegacy/coachingos](https://github.com/Warriorlegacy/coachingos)  
+**Build Status:** [![CoachingOS CI](https://github.com/Warriorlegacy/coachingos/actions/workflows/ci.yml/badge.svg)](https://github.com/Warriorlegacy/coachingos/actions)
+
 CoachingOS unifies student records, guardian communications, batch scheduling, rapid classroom attendance, homework grading, continuous learning progress, and decimal-safe fee collection in one streamlined, production-ready system.
 
 ---

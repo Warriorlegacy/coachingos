@@ -1,6 +1,9 @@
 # SESSION_CONTEXT.md — CoachingOS Handover
 
 **Status:** Completed & Production-Verified  
+**Live Production URL:** **https://coachingos-app-qbyu.netlify.app**  
+**GitHub Remote:** `https://github.com/Warriorlegacy/coachingos`  
+**GitHub Actions CI:** Passing Green  
 **Date:** 13 November 2026 (IST)  
 **Author:** Autonomous Software Engineering Team  
 

@@ -1,6 +1,22 @@
 # CoachingOS — Production Deployment & Operations Guide
 
-## 1. Multi-Runtime Architecture
+## 1. Verified Live Production Deployment
+
+| Parameter | Production Value |
+|---|---|
+| **Live Production URL** | **https://coachingos-app-qbyu.netlify.app** |
+| **Hosting Platform** | Netlify Edge / Production CDN |
+| **Site ID** | `3662be4e-1fa8-4657-be59-f131c9560c33` |
+| **Deploy ID** | `6af6e55bde50cd9b20355b7f` |
+| **Deploy Status** | `ready` (Verified 200 OK) |
+| **GitHub Repository** | `https://github.com/Warriorlegacy/coachingos` |
+| **CI / CD Pipeline** | GitHub Actions (`CoachingOS CI`) — **Passing Green (1m22s)** |
+| **Verification Timestamp** | 13 November 2026, 15:55 IST |
+| **Live Asset Bundle** | `assets/index-DigL0MKu.js` (300 kB uncompressed, 78 kB gzipped) |
+
+---
+
+## 2. Multi-Runtime Architecture
 
 CoachingOS is engineered with a **dual-runtime** design:
 1. **Container / Node.js Runtime**: Single-port HTTP service serving both `/api/v1` and the compiled React SPA from `public/`. Ideal for Render, Docker, WorkBuddy, Railway, VPS, or local development.
