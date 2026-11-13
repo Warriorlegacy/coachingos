@@ -1,7 +1,9 @@
 # SESSION_CONTEXT.md — CoachingOS Handover
 
 **Status:** Completed & Production-Verified  
-**Live Production URL:** **https://coachingos-app-qbyu.netlify.app**  
+**Cloudflare Production URL:** **https://coachingos.rajpiyush092.workers.dev** (Workers + D1 + Edge Assets)  
+**Netlify Production URL:** **https://coachingos-app-qbyu.netlify.app** (Edge CDN)  
+**Cloudflare D1 Database:** `coachingos-db` (`42084919-c64e-4ddf-bf14-56cd9e2b5906`, APAC / Singapore)  
 **GitHub Remote:** `https://github.com/Warriorlegacy/coachingos`  
 **GitHub Actions CI:** Passing Green  
 **Date:** 13 November 2026 (IST)  

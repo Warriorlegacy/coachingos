@@ -5,14 +5,15 @@ compatibility_flags = ["nodejs_compat"]
 
 [assets]
 directory = "./public"
+not_found_handling = "single-page-application"
 binding = "ASSETS"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "coachingos-db"
-database_id = "coachingos-local-d1"
+database_id = "42084919-c64e-4ddf-bf14-56cd9e2b5906"
 
-# Optional R2 bucket for homework attachments and exports
-[[r2_buckets]]
-binding = "STORAGE"
-bucket_name = "coachingos-attachments"
+# Optional R2 bucket for homework attachments and exports (uncomment once enabled in dashboard)
+# [[r2_buckets]]
+# binding = "STORAGE"
+# bucket_name = "coachingos-attachments"

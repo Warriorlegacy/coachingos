@@ -3,19 +3,22 @@ import { createApp } from './app.js';
 
 export default {
   async fetch(request, env, ctx) {
-    // When running inside Cloudflare Workers, env.ASSETS serves static assets
-    // and env.DB provides Cloudflare D1
     const app = createApp();
+    const url = new URL(request.url);
 
     // Check if request is an API call
-    const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) {
       return app.fetch(request, env, ctx);
     }
 
     // Static assets fallback via Workers Static Assets binding
     if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
+      const response = await env.ASSETS.fetch(request);
+      if (response.status === 404 && !url.pathname.includes('.')) {
+        const indexRequest = new Request(new URL('/index.html', request.url), request);
+        return env.ASSETS.fetch(indexRequest);
+      }
+      return response;
     }
 
     return app.fetch(request, env, ctx);
