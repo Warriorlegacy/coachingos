@@ -1,0 +1,12 @@
+node_modules/
+dist/
+public/
+data/*.db
+data/*.db-journal
+.wrangler/
+test-results/
+playwright-report/
+.env
+.env.local
+.DS_Store
+*.log
