@@ -38,7 +38,7 @@ export function authMiddleware() {
     }
 
     const db = getDatabase();
-    const user = db.get("SELECT id, email, name, phone, avatar_url, is_system_admin FROM users WHERE id = ?", [payload.userId]);
+    const user = await db.get("SELECT id, email, name, phone, avatar_url, is_system_admin FROM users WHERE id = ?", [payload.userId]);
     if (!user) {
       c.set('user', null);
       c.set('membership', null);
@@ -52,11 +52,11 @@ export function authMiddleware() {
     let centre = null;
 
     if (centreId) {
-      membership = db.get("SELECT id, role, status FROM memberships WHERE centre_id = ? AND user_id = ? AND status = 'active'", [centreId, user.id]);
-      centre = db.get("SELECT id, name, code, timezone, currency, locale FROM centres WHERE id = ?", [centreId]);
+      membership = await db.get("SELECT id, role, status FROM memberships WHERE centre_id = ? AND user_id = ? AND status = 'active'", [centreId, user.id]);
+      centre = await db.get("SELECT id, name, code, timezone, currency, locale FROM centres WHERE id = ?", [centreId]);
     } else {
       // Find first active membership
-      membership = db.get(
+      membership = await db.get(
         `SELECT m.id, m.role, m.status, m.centre_id, c.name AS centre_name, c.code, c.timezone, c.currency, c.locale
          FROM memberships m
          JOIN centres c ON c.id = m.centre_id

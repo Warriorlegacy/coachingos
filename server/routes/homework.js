@@ -7,7 +7,7 @@ import { generateId } from '../crypto.js';
 export const homeworkRoutes = new Hono();
 
 // List Homework Assignments
-homeworkRoutes.get('/', requireAuth(), (c) => {
+homeworkRoutes.get('/', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const user = c.get('user');
   const membership = c.get('membership');
@@ -43,14 +43,14 @@ homeworkRoutes.get('/', requireAuth(), (c) => {
   }
 
   sql += ` GROUP BY a.id ORDER BY a.due_date DESC`;
-  const assignments = db.all(sql, params);
+  const assignments = await db.all(sql, params);
 
   // If student, attach their own submission status
   if (membership.role === 'student') {
-    const student = db.get("SELECT id FROM students WHERE user_id = ?", [user.id]);
+    const student = await db.get("SELECT id FROM students WHERE user_id = ?", [user.id]);
     if (student) {
       for (const a of assignments) {
-        const sub = db.get("SELECT id, submitted_at, status, score, feedback FROM submissions WHERE assignment_id = ? AND student_id = ?", [a.id, student.id]);
+        const sub = await db.get("SELECT id, submitted_at, status, score, feedback FROM submissions WHERE assignment_id = ? AND student_id = ?", [a.id, student.id]);
         a.mySubmission = sub || null;
       }
     }
@@ -71,7 +71,7 @@ homeworkRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_adm
     return c.json({ error: 'batchId, title, instructions, and dueDate are required', code: 'INVALID_INPUT' }, 400);
   }
 
-  const batch = db.get("SELECT subject_id FROM batches WHERE id = ? AND centre_id = ?", [batchId, centre.id]);
+  const batch = await db.get("SELECT subject_id FROM batches WHERE id = ? AND centre_id = ?", [batchId, centre.id]);
   if (!batch) {
     return c.json({ error: 'Batch not found', code: 'NOT_FOUND' }, 404);
   }
@@ -79,7 +79,7 @@ homeworkRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_adm
   const assignmentId = generateId('hw');
   const now = new Date().toISOString();
 
-  db.run(
+  await db.run(
     `INSERT INTO assignments (id, centre_id, batch_id, teacher_user_id, title, instructions, subject_id, assigned_date, due_date, max_points, submission_mode, attachment_url, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
@@ -99,19 +99,19 @@ homeworkRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_adm
     ]
   );
 
-  const created = db.get("SELECT * FROM assignments WHERE id = ?", [assignmentId]);
+  const created = await db.get("SELECT * FROM assignments WHERE id = ?", [assignmentId]);
   return c.json({ assignment: created }, 201);
 });
 
 // Get Homework Details & Submissions
-homeworkRoutes.get('/:id', requireAuth(), (c) => {
+homeworkRoutes.get('/:id', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const user = c.get('user');
   const membership = c.get('membership');
   const assignmentId = c.req.param('id');
   const db = getDatabase();
 
-  const assignment = db.get(
+  const assignment = await db.get(
     `SELECT a.*, b.name AS batch_name, sub.name AS subject_name, u.name AS teacher_name
      FROM assignments a
      JOIN batches b ON b.id = a.batch_id
@@ -129,7 +129,7 @@ homeworkRoutes.get('/:id', requireAuth(), (c) => {
   let mySubmission = null;
 
   if (['centre_owner', 'centre_admin', 'teacher'].includes(membership.role)) {
-    submissions = db.all(
+    submissions = await db.all(
       `SELECT sub.*, s.admission_no, s.first_name, s.last_name
        FROM submissions sub
        JOIN students s ON s.id = sub.student_id
@@ -138,9 +138,9 @@ homeworkRoutes.get('/:id', requireAuth(), (c) => {
       [assignmentId]
     );
   } else if (membership.role === 'student') {
-    const student = db.get("SELECT id FROM students WHERE user_id = ?", [user.id]);
+    const student = await db.get("SELECT id FROM students WHERE user_id = ?", [user.id]);
     if (student) {
-      mySubmission = db.get("SELECT * FROM submissions WHERE assignment_id = ? AND student_id = ?", [assignmentId, student.id]);
+      mySubmission = await db.get("SELECT * FROM submissions WHERE assignment_id = ? AND student_id = ?", [assignmentId, student.id]);
     }
   }
 
@@ -165,29 +165,29 @@ homeworkRoutes.post('/:id/submit', requireAuth(), async (c) => {
   }
 
   // Find student record for user
-  const student = db.get("SELECT id FROM students WHERE user_id = ? AND centre_id = ?", [user.id, centre.id]);
+  const student = await db.get("SELECT id FROM students WHERE user_id = ? AND centre_id = ?", [user.id, centre.id]);
   if (!student) {
     return c.json({ error: 'No enrolled student profile linked to this user account', code: 'NO_STUDENT_PROFILE' }, 403);
   }
 
-  const assignment = db.get("SELECT id, due_date FROM assignments WHERE id = ? AND centre_id = ?", [assignmentId, centre.id]);
+  const assignment = await db.get("SELECT id, due_date FROM assignments WHERE id = ? AND centre_id = ?", [assignmentId, centre.id]);
   if (!assignment) {
     return c.json({ error: 'Assignment not found', code: 'NOT_FOUND' }, 404);
   }
 
   const now = new Date().toISOString();
-  const existing = db.get("SELECT id, status FROM submissions WHERE assignment_id = ? AND student_id = ?", [assignmentId, student.id]);
+  const existing = await db.get("SELECT id, status FROM submissions WHERE assignment_id = ? AND student_id = ?", [assignmentId, student.id]);
 
   if (!existing) {
     const subId = generateId('sub');
-    db.run(
+    await db.run(
       `INSERT INTO submissions (id, assignment_id, student_id, submitted_at, text_content, file_url, status)
        VALUES (?, ?, ?, ?, ?, ?, 'submitted')`,
       [subId, assignmentId, student.id, now, textContent || null, fileUrl || null]
     );
   } else {
     // Update submission if permitted
-    db.run(
+    await db.run(
       `UPDATE submissions
        SET submitted_at = ?, text_content = ?, file_url = ?, status = 'submitted'
        WHERE id = ?`,
@@ -210,7 +210,7 @@ homeworkRoutes.post('/:id/grade', requireAuth(), requireRole(['centre_owner', 'c
     return c.json({ error: 'submissionId and score are required', code: 'INVALID_INPUT' }, 400);
   }
 
-  const assignment = db.get("SELECT max_points FROM assignments WHERE id = ?", [assignmentId]);
+  const assignment = await db.get("SELECT max_points FROM assignments WHERE id = ?", [assignmentId]);
   if (!assignment) {
     return c.json({ error: 'Assignment not found', code: 'NOT_FOUND' }, 404);
   }
@@ -224,7 +224,7 @@ homeworkRoutes.post('/:id/grade', requireAuth(), requireRole(['centre_owner', 'c
   }
 
   const now = new Date().toISOString();
-  db.run(
+  await db.run(
     `UPDATE submissions
      SET score = ?, feedback = ?, status = ?, graded_by = ?, graded_at = ?
      WHERE id = ?`,

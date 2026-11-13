@@ -7,7 +7,7 @@ import { generateId } from '../crypto.js';
 export const studentRoutes = new Hono();
 
 // List Students (Scoped to Centre)
-studentRoutes.get('/', requireAuth(), (c) => {
+studentRoutes.get('/', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const user = c.get('user');
   const membership = c.get('membership');
@@ -71,7 +71,7 @@ studentRoutes.get('/', requireAuth(), (c) => {
 
   sql += ` GROUP BY s.id ORDER BY s.first_name ASC`;
 
-  const students = db.all(sql, params);
+  const students = await db.all(sql, params);
   return c.json({ students });
 });
 
@@ -88,7 +88,7 @@ studentRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_admi
   }
 
   // Check duplicate admission number
-  const existing = db.get("SELECT id FROM students WHERE centre_id = ? AND admission_no = ?", [centre.id, admissionNo.trim()]);
+  const existing = await db.get("SELECT id FROM students WHERE centre_id = ? AND admission_no = ?", [centre.id, admissionNo.trim()]);
   if (existing) {
     return c.json({ error: `Student with admission number "${admissionNo}" already exists in this centre.`, code: 'DUPLICATE_ADMISSION_NO' }, 409);
   }
@@ -97,7 +97,7 @@ studentRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_admi
   const studentId = generateId('stu');
   const enrollDate = enrollmentDate || now.slice(0, 10);
 
-  db.run(
+  await db.run(
     `INSERT INTO students (id, centre_id, admission_no, first_name, last_name, grade_level, enrollment_date, status, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
     [studentId, centre.id, admissionNo.trim(), firstName.trim(), lastName.trim(), gradeLevel.trim(), enrollDate, now, now]
@@ -106,45 +106,45 @@ studentRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_admi
   // Link guardian if provided
   if (guardian && guardian.name && guardian.phone) {
     const guardianId = generateId('grd');
-    db.run(
+    await db.run(
       `INSERT INTO guardians (id, centre_id, name, relationship, phone, email, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [guardianId, centre.id, guardian.name.trim(), guardian.relationship || 'Guardian', guardian.phone.trim(), guardian.email || null, now]
     );
 
-    db.run(
+    await db.run(
       `INSERT INTO student_guardians (id, student_id, guardian_id, is_primary, created_at)
        VALUES (?, ?, ?, 1, ?)`,
       [generateId('sg'), studentId, guardianId, now]
     );
   }
 
-  db.run(
+  await db.run(
     `INSERT INTO audit_events (id, centre_id, actor_user_id, event_type, entity_type, entity_id, new_values_json, created_at)
      VALUES (?, ?, ?, 'student.created', 'student', ?, ?, ?)`,
     [generateId('aud'), centre.id, user.id, studentId, JSON.stringify({ admissionNo, firstName, lastName, gradeLevel }), now]
   );
 
-  const student = db.get("SELECT * FROM students WHERE id = ?", [studentId]);
+  const student = await db.get("SELECT * FROM students WHERE id = ?", [studentId]);
   return c.json({ student }, 201);
 });
 
 // Get Student Detail
-studentRoutes.get('/:id', requireAuth(), (c) => {
+studentRoutes.get('/:id', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const user = c.get('user');
   const membership = c.get('membership');
   const studentId = c.req.param('id');
   const db = getDatabase();
 
-  const student = db.get("SELECT * FROM students WHERE id = ? AND centre_id = ?", [studentId, centre.id]);
+  const student = await db.get("SELECT * FROM students WHERE id = ? AND centre_id = ?", [studentId, centre.id]);
   if (!student) {
     return c.json({ error: 'Student not found', code: 'NOT_FOUND' }, 404);
   }
 
   // IDOR Protection: If guardian, verify relationship!
   if (membership.role === 'parent_guardian') {
-    const isLinked = db.get(
+    const isLinked = await db.get(
       `SELECT 1 FROM student_guardians sg
        JOIN guardians g ON g.id = sg.guardian_id
        WHERE sg.student_id = ? AND g.user_id = ?`,
@@ -158,7 +158,7 @@ studentRoutes.get('/:id', requireAuth(), (c) => {
   }
 
   // Guardians
-  const guardians = db.all(
+  const guardians = await db.all(
     `SELECT g.id, g.name, g.relationship, g.phone, g.email, sg.is_primary
      FROM student_guardians sg
      JOIN guardians g ON g.id = sg.guardian_id
@@ -167,7 +167,7 @@ studentRoutes.get('/:id', requireAuth(), (c) => {
   );
 
   // Enrolled Batches
-  const batches = db.all(
+  const batches = await db.all(
     `SELECT b.id, b.name, b.grade_level, sub.name AS subject_name, e.enrolled_at
      FROM enrollments e
      JOIN batches b ON b.id = e.batch_id
@@ -177,7 +177,7 @@ studentRoutes.get('/:id', requireAuth(), (c) => {
   );
 
   // Attendance stats
-  const attStats = db.get(
+  const attStats = await db.get(
     `SELECT 
        COUNT(*) AS total_sessions,
        SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) AS present_count,
@@ -192,7 +192,7 @@ studentRoutes.get('/:id', requireAuth(), (c) => {
   // Invoices & Balance (Hidden from teachers)
   let invoices = [];
   if (['centre_owner', 'centre_admin', 'accountant', 'parent_guardian'].includes(membership.role)) {
-    invoices = db.all(
+    invoices = await db.all(
       `SELECT id, invoice_number, issue_date, due_date, total_cents, paid_cents, status
        FROM invoices
        WHERE student_id = ?
@@ -239,7 +239,7 @@ studentRoutes.post('/import-csv', requireAuth(), requireRole(['centre_owner', 'c
   }
 
   const existingAdmNos = new Set(
-    db.all("SELECT admission_no FROM students WHERE centre_id = ?", [centre.id]).map(s => s.admission_no.toLowerCase())
+    await db.all("SELECT admission_no FROM students WHERE centre_id = ?", [centre.id]).map(s => s.admission_no.toLowerCase())
   );
 
   const errors = [];
@@ -295,7 +295,7 @@ studentRoutes.post('/import-csv', requireAuth(), requireRole(['centre_owner', 'c
   let importedCount = 0;
   for (const s of validRows) {
     const studentId = generateId('stu');
-    db.run(
+    await db.run(
       `INSERT INTO students (id, centre_id, admission_no, first_name, last_name, grade_level, enrollment_date, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
       [studentId, centre.id, s.admissionNo, s.firstName, s.lastName, s.gradeLevel, s.enrollmentDate, now, now]
@@ -303,7 +303,7 @@ studentRoutes.post('/import-csv', requireAuth(), requireRole(['centre_owner', 'c
     importedCount++;
   }
 
-  db.run(
+  await db.run(
     `INSERT INTO audit_events (id, centre_id, actor_user_id, event_type, entity_type, entity_id, new_values_json, created_at)
      VALUES (?, ?, ?, 'students.imported_csv', 'centre', ?, ?, ?)`,
     [generateId('aud'), centre.id, user.id, centre.id, JSON.stringify({ importedCount, errorsCount: errors.length }), now]
@@ -318,11 +318,11 @@ studentRoutes.post('/import-csv', requireAuth(), requireRole(['centre_owner', 'c
 });
 
 // CSV Export (Formula-Injection Protected)
-studentRoutes.get('/export/csv', requireAuth(), requireRole(['centre_owner', 'centre_admin']), (c) => {
+studentRoutes.get('/export/csv', requireAuth(), requireRole(['centre_owner', 'centre_admin']), async (c) => {
   const centre = c.get('centre');
   const db = getDatabase();
 
-  const students = db.all(
+  const students = await db.all(
     `SELECT s.admission_no, s.first_name, s.last_name, s.grade_level, s.enrollment_date, s.status,
             g.name AS guardian_name, g.phone AS guardian_phone
      FROM students s

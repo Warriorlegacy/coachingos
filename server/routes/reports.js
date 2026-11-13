@@ -6,11 +6,11 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 export const reportRoutes = new Hono();
 
 // Centre Executive KPI Summary
-reportRoutes.get('/summary', requireAuth(), (c) => {
+reportRoutes.get('/summary', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const db = getDatabase();
 
-  const studentCounts = db.get(
+  const studentCounts = await db.get(
     `SELECT 
        COUNT(*) AS total_students,
        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_students
@@ -18,9 +18,9 @@ reportRoutes.get('/summary', requireAuth(), (c) => {
     [centre.id]
   );
 
-  const batchCount = db.get("SELECT COUNT(*) AS total_batches FROM batches WHERE centre_id = ? AND status = 'active'", [centre.id]);
+  const batchCount = await db.get("SELECT COUNT(*) AS total_batches FROM batches WHERE centre_id = ? AND status = 'active'", [centre.id]);
 
-  const attSummary = db.get(
+  const attSummary = await db.get(
     `SELECT 
        COUNT(*) AS total_records,
        SUM(CASE WHEN ar.status IN ('present', 'late') THEN 1 ELSE 0 END) AS attended_records
@@ -30,7 +30,7 @@ reportRoutes.get('/summary', requireAuth(), (c) => {
     [centre.id]
   );
 
-  const feeSummary = db.get(
+  const feeSummary = await db.get(
     `SELECT 
        SUM(total_cents) AS total_invoiced_cents,
        SUM(paid_cents) AS total_collected_cents,
@@ -39,7 +39,7 @@ reportRoutes.get('/summary', requireAuth(), (c) => {
     [centre.id]
   );
 
-  const hwSummary = db.get(
+  const hwSummary = await db.get(
     `SELECT 
        COUNT(DISTINCT a.id) AS total_assignments,
        COUNT(DISTINCT sub.id) AS total_submissions
@@ -73,11 +73,11 @@ reportRoutes.get('/summary', requireAuth(), (c) => {
 });
 
 // Audit Log Events (Owner / Admin only)
-reportRoutes.get('/audit-log', requireAuth(), requireRole(['centre_owner', 'centre_admin']), (c) => {
+reportRoutes.get('/audit-log', requireAuth(), requireRole(['centre_owner', 'centre_admin']), async (c) => {
   const centre = c.get('centre');
   const db = getDatabase();
 
-  const events = db.all(
+  const events = await db.all(
     `SELECT ae.*, u.name AS actor_name, u.email AS actor_email
      FROM audit_events ae
      JOIN users u ON u.id = ae.actor_user_id

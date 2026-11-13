@@ -7,7 +7,7 @@ import { generateId } from '../crypto.js';
 export const batchRoutes = new Hono();
 
 // List Batches
-batchRoutes.get('/', requireAuth(), (c) => {
+batchRoutes.get('/', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const user = c.get('user');
   const membership = c.get('membership');
@@ -37,7 +37,7 @@ batchRoutes.get('/', requireAuth(), (c) => {
   }
 
   sql += ` GROUP BY b.id ORDER BY b.name ASC`;
-  const batches = db.all(sql, params);
+  const batches = await db.all(sql, params);
 
   return c.json({ batches });
 });
@@ -58,9 +58,9 @@ batchRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_admin'
   const now = new Date().toISOString();
 
   // Find active session
-  const currentSession = db.get("SELECT id FROM academic_sessions WHERE centre_id = ? AND is_current = 1", [centre.id]);
+  const currentSession = await db.get("SELECT id FROM academic_sessions WHERE centre_id = ? AND is_current = 1", [centre.id]);
 
-  db.run(
+  await db.run(
     `INSERT INTO batches (id, centre_id, academic_session_id, name, grade_level, subject_id, capacity, room_or_link, status, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
     [batchId, centre.id, currentSession ? currentSession.id : null, name.trim(), gradeLevel.trim(), subjectId, capacity || 30, roomOrLink || null, now]
@@ -69,7 +69,7 @@ batchRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_admin'
   // Assign teachers
   if (Array.isArray(teacherUserIds) && teacherUserIds.length > 0) {
     for (let i = 0; i < teacherUserIds.length; i++) {
-      db.run(
+      await db.run(
         `INSERT INTO batch_teachers (id, batch_id, teacher_user_id, is_primary, created_at)
          VALUES (?, ?, ?, ?, ?)`,
         [generateId('bt'), batchId, teacherUserIds[i], i === 0 ? 1 : 0, now]
@@ -77,23 +77,23 @@ batchRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_admin'
     }
   }
 
-  db.run(
+  await db.run(
     `INSERT INTO audit_events (id, centre_id, actor_user_id, event_type, entity_type, entity_id, new_values_json, created_at)
      VALUES (?, ?, ?, 'batch.created', 'batch', ?, ?, ?)`,
     [generateId('aud'), centre.id, user.id, batchId, JSON.stringify({ name, gradeLevel }), now]
   );
 
-  const batch = db.get("SELECT * FROM batches WHERE id = ?", [batchId]);
+  const batch = await db.get("SELECT * FROM batches WHERE id = ?", [batchId]);
   return c.json({ batch }, 201);
 });
 
 // Get Batch Details
-batchRoutes.get('/:id', requireAuth(), (c) => {
+batchRoutes.get('/:id', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const batchId = c.req.param('id');
   const db = getDatabase();
 
-  const batch = db.get(
+  const batch = await db.get(
     `SELECT b.*, sub.name AS subject_name, sub.code AS subject_code
      FROM batches b
      JOIN subjects sub ON sub.id = b.subject_id
@@ -105,7 +105,7 @@ batchRoutes.get('/:id', requireAuth(), (c) => {
     return c.json({ error: 'Batch not found', code: 'NOT_FOUND' }, 404);
   }
 
-  const teachers = db.all(
+  const teachers = await db.all(
     `SELECT u.id, u.name, u.email, bt.is_primary
      FROM batch_teachers bt
      JOIN users u ON u.id = bt.teacher_user_id
@@ -113,7 +113,7 @@ batchRoutes.get('/:id', requireAuth(), (c) => {
     [batchId]
   );
 
-  const students = db.all(
+  const students = await db.all(
     `SELECT s.id, s.admission_no, s.first_name, s.last_name, s.grade_level, e.enrolled_at
      FROM enrollments e
      JOIN students s ON s.id = e.student_id
@@ -122,7 +122,7 @@ batchRoutes.get('/:id', requireAuth(), (c) => {
     [batchId]
   );
 
-  const timetable = db.all(
+  const timetable = await db.all(
     `SELECT * FROM timetable_rules WHERE batch_id = ? ORDER BY day_of_week ASC, start_time ASC`,
     [batchId]
   );
@@ -152,9 +152,9 @@ batchRoutes.post('/:id/enroll', requireAuth(), requireRole(['centre_owner', 'cen
   let enrolledCount = 0;
 
   for (const sId of studentIds) {
-    const existing = db.get("SELECT id FROM enrollments WHERE batch_id = ? AND student_id = ?", [batchId, sId]);
+    const existing = await db.get("SELECT id FROM enrollments WHERE batch_id = ? AND student_id = ?", [batchId, sId]);
     if (!existing) {
-      db.run(
+      await db.run(
         `INSERT INTO enrollments (id, centre_id, batch_id, student_id, enrolled_at, status)
          VALUES (?, ?, ?, ?, ?, 'active')`,
         [generateId('enr'), centre.id, batchId, sId, now]
@@ -163,7 +163,7 @@ batchRoutes.post('/:id/enroll', requireAuth(), requireRole(['centre_owner', 'cen
     }
   }
 
-  db.run(
+  await db.run(
     `INSERT INTO audit_events (id, centre_id, actor_user_id, event_type, entity_type, entity_id, new_values_json, created_at)
      VALUES (?, ?, ?, 'batch.students_enrolled', 'batch', ?, ?, ?)`,
     [generateId('aud'), centre.id, user.id, batchId, JSON.stringify({ count: enrolledCount }), now]
@@ -173,11 +173,11 @@ batchRoutes.post('/:id/enroll', requireAuth(), requireRole(['centre_owner', 'cen
 });
 
 // Timetable Rules with Conflict Detection
-batchRoutes.get('/timetable/all', requireAuth(), (c) => {
+batchRoutes.get('/timetable/all', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const db = getDatabase();
 
-  const rules = db.all(
+  const rules = await db.all(
     `SELECT tr.*, b.name AS batch_name, b.grade_level, sub.name AS subject_name,
             GROUP_CONCAT(u.name) AS teacher_names
      FROM timetable_rules tr
@@ -207,9 +207,9 @@ batchRoutes.post('/:id/timetable', requireAuth(), requireRole(['centre_owner', '
   }
 
   // Conflict Check: Is any assigned teacher of this batch already teaching another batch at this time?
-  const teachers = db.all("SELECT teacher_user_id FROM batch_teachers WHERE batch_id = ?", [batchId]);
+  const teachers = await db.all("SELECT teacher_user_id FROM batch_teachers WHERE batch_id = ?", [batchId]);
   for (const t of teachers) {
-    const conflict = db.get(
+    const conflict = await db.get(
       `SELECT tr.id, b.name AS conflicting_batch, tr.start_time, tr.end_time
        FROM timetable_rules tr
        JOIN batches b ON b.id = tr.batch_id
@@ -233,12 +233,12 @@ batchRoutes.post('/:id/timetable', requireAuth(), requireRole(['centre_owner', '
   const ruleId = generateId('ttr');
   const now = new Date().toISOString();
 
-  db.run(
+  await db.run(
     `INSERT INTO timetable_rules (id, batch_id, day_of_week, start_time, end_time, period_label, room, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [ruleId, batchId, dayOfWeek, startTime, endTime, periodLabel || 'Session', room || null, now]
   );
 
-  const rule = db.get("SELECT * FROM timetable_rules WHERE id = ?", [ruleId]);
+  const rule = await db.get("SELECT * FROM timetable_rules WHERE id = ?", [ruleId]);
   return c.json({ rule }, 201);
 });

@@ -15,13 +15,13 @@ authRoutes.post('/login', async (c) => {
   }
 
   const db = getDatabase();
-  const user = db.get("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", [email.trim()]);
+  const user = await db.get("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", [email.trim()]);
   if (!user || !verifyPassword(password, user.password_hash)) {
     return c.json({ error: 'Invalid email or password', code: 'INVALID_CREDENTIALS' }, 401);
   }
 
   // Get user memberships
-  const memberships = db.all(
+  const memberships = await db.all(
     `SELECT m.id, m.centre_id, m.role, m.status, c.name AS centre_name, c.code, c.currency, c.timezone
      FROM memberships m
      JOIN centres c ON c.id = m.centre_id
@@ -88,12 +88,12 @@ authRoutes.post('/demo-login', async (c) => {
 
   const email = roleEmailMap[targetRole] || roleEmailMap.centre_owner;
   const db = getDatabase();
-  const user = db.get("SELECT * FROM users WHERE email = ?", [email]);
+  const user = await db.get("SELECT * FROM users WHERE email = ?", [email]);
   if (!user) {
     return c.json({ error: `Demo user for role ${targetRole} not found. Please seed the database.`, code: 'USER_NOT_FOUND' }, 404);
   }
 
-  const membership = db.get(
+  const membership = await db.get(
     `SELECT m.id, m.centre_id, m.role, m.status, c.name AS centre_name, c.code, c.currency, c.timezone
      FROM memberships m
      JOIN centres c ON c.id = m.centre_id
@@ -139,7 +139,7 @@ authRoutes.post('/logout', (c) => {
 });
 
 // Get Current User & Membership
-authRoutes.get('/me', (c) => {
+authRoutes.get('/me', async (c) => {
   const user = c.get('user');
   const membership = c.get('membership');
   const centre = c.get('centre');
@@ -150,7 +150,7 @@ authRoutes.get('/me', (c) => {
   }
 
   const db = getDatabase();
-  const memberships = db.all(
+  const memberships = await db.all(
     `SELECT m.id, m.centre_id, m.role, c.name AS centre_name, c.code, c.currency, c.timezone
      FROM memberships m
      JOIN centres c ON c.id = m.centre_id

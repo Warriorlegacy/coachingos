@@ -7,7 +7,7 @@ import { generateId } from '../crypto.js';
 export const noticeRoutes = new Hono();
 
 // List Notices (Role & Audience filtered)
-noticeRoutes.get('/', requireAuth(), (c) => {
+noticeRoutes.get('/', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const user = c.get('user');
   const membership = c.get('membership');
@@ -43,7 +43,7 @@ noticeRoutes.get('/', requireAuth(), (c) => {
   }
 
   sql += ` ORDER BY n.created_at DESC`;
-  const notices = db.all(sql, params);
+  const notices = await db.all(sql, params);
 
   return c.json({ notices });
 });
@@ -63,28 +63,28 @@ noticeRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_admin
   const noticeId = generateId('ntc');
   const now = new Date().toISOString();
 
-  db.run(
+  await db.run(
     `INSERT INTO notices (id, centre_id, title, content, priority, audience_type, batch_id, student_id, published_by_user_id, expires_at, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [noticeId, centre.id, title.trim(), content.trim(), priority, audienceType, batchId || null, studentId || null, user.id, expiresAt || null, now]
   );
 
-  const notice = db.get("SELECT * FROM notices WHERE id = ?", [noticeId]);
+  const notice = await db.get("SELECT * FROM notices WHERE id = ?", [noticeId]);
   return c.json({ notice }, 201);
 });
 
 // In-App Notifications Inbox
-noticeRoutes.get('/notifications', requireAuth(), (c) => {
+noticeRoutes.get('/notifications', requireAuth(), async (c) => {
   const user = c.get('user');
   const centre = c.get('centre');
   const db = getDatabase();
 
-  const notifications = db.all(
+  const notifications = await db.all(
     `SELECT * FROM notifications WHERE user_id = ? AND centre_id = ? ORDER BY created_at DESC LIMIT 50`,
     [user.id, centre.id]
   );
 
-  const unreadCount = db.get(
+  const unreadCount = await db.get(
     `SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND centre_id = ? AND is_read = 0`,
     [user.id, centre.id]
   )?.count || 0;
@@ -93,11 +93,11 @@ noticeRoutes.get('/notifications', requireAuth(), (c) => {
 });
 
 // Mark Notification as Read
-noticeRoutes.post('/notifications/:id/read', requireAuth(), (c) => {
+noticeRoutes.post('/notifications/:id/read', requireAuth(), async (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
   const db = getDatabase();
 
-  db.run("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?", [id, user.id]);
+  await db.run("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?", [id, user.id]);
   return c.json({ success: true });
 });

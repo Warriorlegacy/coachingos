@@ -124,13 +124,13 @@ aiRoutes.post('/progress-summary', requireAuth(), async (c) => {
   }
 
   const db = getDatabase();
-  const student = db.get("SELECT * FROM students WHERE id = ? AND centre_id = ?", [studentId, centre.id]);
+  const student = await db.get("SELECT * FROM students WHERE id = ? AND centre_id = ?", [studentId, centre.id]);
   if (!student) {
     return c.json({ error: 'Student not found', code: 'NOT_FOUND' }, 404);
   }
 
   // Fetch actual metrics from database
-  const attStats = db.get(
+  const attStats = await db.get(
     `SELECT COUNT(*) AS total,
             SUM(CASE WHEN status IN ('present', 'late') THEN 1 ELSE 0 END) AS attended
      FROM attendance_records ar
@@ -139,7 +139,7 @@ aiRoutes.post('/progress-summary', requireAuth(), async (c) => {
     [studentId]
   );
 
-  const scores = db.all(
+  const scores = await db.all(
     `SELECT sc.marks_obtained, a.max_marks, a.title, sub.name AS subject_name
      FROM assessment_scores sc
      JOIN assessments a ON a.id = sc.assessment_id
@@ -149,7 +149,7 @@ aiRoutes.post('/progress-summary', requireAuth(), async (c) => {
     [studentId]
   );
 
-  const hwStats = db.get(
+  const hwStats = await db.get(
     `SELECT COUNT(*) AS total_submitted,
             AVG(score) AS avg_score
      FROM submissions WHERE student_id = ?`,
@@ -200,7 +200,7 @@ aiRoutes.post('/fee-reminder', requireAuth(), requireRole(['centre_owner', 'cent
   const { invoiceId } = body;
 
   const db = getDatabase();
-  const inv = db.get(
+  const inv = await db.get(
     `SELECT inv.*, s.first_name, s.last_name, g.name AS guardian_name, g.phone AS guardian_phone
      FROM invoices inv
      JOIN students s ON s.id = inv.student_id

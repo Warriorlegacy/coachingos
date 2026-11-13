@@ -7,7 +7,7 @@ import { generateId } from '../crypto.js';
 export const attendanceRoutes = new Hono();
 
 // Get or Prepare Attendance Session for a Batch & Date
-attendanceRoutes.get('/session', requireAuth(), (c) => {
+attendanceRoutes.get('/session', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const user = c.get('user');
   const membership = c.get('membership');
@@ -23,14 +23,14 @@ attendanceRoutes.get('/session', requireAuth(), (c) => {
 
   // Teacher RBAC Check
   if (membership.role === 'teacher') {
-    const isAssigned = db.get("SELECT 1 FROM batch_teachers WHERE batch_id = ? AND teacher_user_id = ?", [batchId, user.id]);
+    const isAssigned = await db.get("SELECT 1 FROM batch_teachers WHERE batch_id = ? AND teacher_user_id = ?", [batchId, user.id]);
     if (!isAssigned) {
       return c.json({ error: 'Access denied: You are not assigned to this batch', code: 'FORBIDDEN' }, 403);
     }
   }
 
   // Check if session already exists
-  const session = db.get(
+  const session = await db.get(
     `SELECT * FROM attendance_sessions
      WHERE centre_id = ? AND batch_id = ? AND date = ? AND period = ?`,
     [centre.id, batchId, date, period]
@@ -38,7 +38,7 @@ attendanceRoutes.get('/session', requireAuth(), (c) => {
 
   let records = [];
   if (session) {
-    records = db.all(
+    records = await db.all(
       `SELECT ar.*, s.admission_no, s.first_name, s.last_name, s.grade_level
        FROM attendance_records ar
        JOIN students s ON s.id = ar.student_id
@@ -48,7 +48,7 @@ attendanceRoutes.get('/session', requireAuth(), (c) => {
     );
   } else {
     // Generate empty template from active enrolled students
-    const roster = db.all(
+    const roster = await db.all(
       `SELECT s.id AS student_id, s.admission_no, s.first_name, s.last_name, s.grade_level
        FROM enrollments e
        JOIN students s ON s.id = e.student_id
@@ -93,14 +93,14 @@ attendanceRoutes.post('/submit', requireAuth(), requireRole(['centre_owner', 'ce
 
   // Teacher RBAC Check
   if (membership.role === 'teacher') {
-    const isAssigned = db.get("SELECT 1 FROM batch_teachers WHERE batch_id = ? AND teacher_user_id = ?", [batchId, user.id]);
+    const isAssigned = await db.get("SELECT 1 FROM batch_teachers WHERE batch_id = ? AND teacher_user_id = ?", [batchId, user.id]);
     if (!isAssigned) {
       return c.json({ error: 'Access denied: You are not assigned to this batch', code: 'FORBIDDEN' }, 403);
     }
   }
 
   const now = new Date().toISOString();
-  let session = db.get(
+  let session = await db.get(
     `SELECT * FROM attendance_sessions
      WHERE centre_id = ? AND batch_id = ? AND date = ? AND period = ?`,
     [centre.id, batchId, date, period]
@@ -109,7 +109,7 @@ attendanceRoutes.post('/submit', requireAuth(), requireRole(['centre_owner', 'ce
   let isNew = false;
   if (!session) {
     const sessionId = generateId('att_ses');
-    db.run(
+    await db.run(
       `INSERT INTO attendance_sessions (id, centre_id, batch_id, date, period, taken_by_user_id, taken_at, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [sessionId, centre.id, batchId, date, period, user.id, now, notes || null]
@@ -122,10 +122,10 @@ attendanceRoutes.post('/submit', requireAuth(), requireRole(['centre_owner', 'ce
   let savedCount = 0;
   for (const r of records) {
     const validStatus = ['present', 'absent', 'late', 'excused'].includes(r.status) ? r.status : 'present';
-    const existingRec = db.get("SELECT id, status FROM attendance_records WHERE session_id = ? AND student_id = ?", [session.id, r.studentId || r.student_id]);
+    const existingRec = await db.get("SELECT id, status FROM attendance_records WHERE session_id = ? AND student_id = ?", [session.id, r.studentId || r.student_id]);
 
     if (!existingRec) {
-      db.run(
+      await db.run(
         `INSERT INTO attendance_records (id, session_id, student_id, status, remarks)
          VALUES (?, ?, ?, ?, ?)`,
         [generateId('att_rec'), session.id, r.studentId || r.student_id, validStatus, r.remarks || null]
@@ -133,14 +133,14 @@ attendanceRoutes.post('/submit', requireAuth(), requireRole(['centre_owner', 'ce
       savedCount++;
     } else if (existingRec.status !== validStatus) {
       // Record correction with audit logging
-      db.run(
+      await db.run(
         `UPDATE attendance_records
          SET status = ?, remarks = ?, last_edited_by = ?, last_edited_at = ?, edit_reason = ?
          WHERE id = ?`,
         [validStatus, r.remarks || null, user.id, now, r.editReason || 'Batch attendance update', existingRec.id]
       );
 
-      db.run(
+      await db.run(
         `INSERT INTO audit_events (id, centre_id, actor_user_id, event_type, entity_type, entity_id, old_values_json, new_values_json, reason, created_at)
          VALUES (?, ?, ?, 'attendance.corrected', 'attendance_record', ?, ?, ?, ?, ?)`,
         [
@@ -182,7 +182,7 @@ attendanceRoutes.put('/records/:id', requireAuth(), requireRole(['centre_owner',
     return c.json({ error: 'A clear reason for attendance correction is mandatory for audit trail', code: 'REASON_REQUIRED' }, 400);
   }
 
-  const existing = db.get(
+  const existing = await db.get(
     `SELECT ar.*, s.centre_id
      FROM attendance_records ar
      JOIN attendance_sessions s ON s.id = ar.session_id
@@ -195,14 +195,14 @@ attendanceRoutes.put('/records/:id', requireAuth(), requireRole(['centre_owner',
   }
 
   const now = new Date().toISOString();
-  db.run(
+  await db.run(
     `UPDATE attendance_records
      SET status = ?, remarks = ?, last_edited_by = ?, last_edited_at = ?, edit_reason = ?
      WHERE id = ?`,
     [status, remarks || null, user.id, now, editReason.trim(), recordId]
   );
 
-  db.run(
+  await db.run(
     `INSERT INTO audit_events (id, centre_id, actor_user_id, event_type, entity_type, entity_id, old_values_json, new_values_json, reason, created_at)
      VALUES (?, ?, ?, 'attendance.corrected', 'attendance_record', ?, ?, ?, ?, ?)`,
     [
@@ -217,7 +217,7 @@ attendanceRoutes.put('/records/:id', requireAuth(), requireRole(['centre_owner',
     ]
   );
 
-  const updated = db.get("SELECT * FROM attendance_records WHERE id = ?", [recordId]);
+  const updated = await db.get("SELECT * FROM attendance_records WHERE id = ?", [recordId]);
   return c.json({ success: true, record: updated });
 });
 
@@ -240,7 +240,7 @@ attendanceRoutes.post('/sync-offline', requireAuth(), requireRole(['centre_owner
   for (const item of queue) {
     const { batchId, date, period = 'Period 1', records, clientTimestamp } = item;
     // Check if session was already modified on server after client timestamp
-    const existingSession = db.get(
+    const existingSession = await db.get(
       `SELECT * FROM attendance_sessions
        WHERE centre_id = ? AND batch_id = ? AND date = ? AND period = ?`,
       [centre.id, batchId, date, period]
@@ -259,7 +259,7 @@ attendanceRoutes.post('/sync-offline', requireAuth(), requireRole(['centre_owner
     // Process submission safely
     let sessionId = existingSession ? existingSession.id : generateId('att_ses');
     if (!existingSession) {
-      db.run(
+      await db.run(
         `INSERT INTO attendance_sessions (id, centre_id, batch_id, date, period, taken_by_user_id, taken_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [sessionId, centre.id, batchId, date, period, user.id, now]
@@ -270,15 +270,15 @@ attendanceRoutes.post('/sync-offline', requireAuth(), requireRole(['centre_owner
       for (const r of records) {
         const validStatus = ['present', 'absent', 'late', 'excused'].includes(r.status) ? r.status : 'present';
         const sId = r.studentId || r.student_id;
-        const exists = db.get("SELECT id FROM attendance_records WHERE session_id = ? AND student_id = ?", [sessionId, sId]);
+        const exists = await db.get("SELECT id FROM attendance_records WHERE session_id = ? AND student_id = ?", [sessionId, sId]);
         if (!exists) {
-          db.run(
+          await db.run(
             `INSERT INTO attendance_records (id, session_id, student_id, status, remarks)
              VALUES (?, ?, ?, ?, ?)`,
             [generateId('att_rec'), sessionId, sId, validStatus, r.remarks || 'Offline synced']
           );
         } else {
-          db.run(
+          await db.run(
             `UPDATE attendance_records SET status = ?, remarks = ? WHERE id = ?`,
             [validStatus, r.remarks || 'Offline synced', exists.id]
           );
@@ -292,7 +292,7 @@ attendanceRoutes.post('/sync-offline', requireAuth(), requireRole(['centre_owner
 });
 
 // Student Attendance History (Role-guarded)
-attendanceRoutes.get('/student/:id', requireAuth(), (c) => {
+attendanceRoutes.get('/student/:id', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const user = c.get('user');
   const membership = c.get('membership');
@@ -301,7 +301,7 @@ attendanceRoutes.get('/student/:id', requireAuth(), (c) => {
 
   // IDOR Protection: Guardian verification
   if (membership.role === 'parent_guardian') {
-    const isLinked = db.get(
+    const isLinked = await db.get(
       `SELECT 1 FROM student_guardians sg
        JOIN guardians g ON g.id = sg.guardian_id
        WHERE sg.student_id = ? AND g.user_id = ?`,
@@ -311,13 +311,13 @@ attendanceRoutes.get('/student/:id', requireAuth(), (c) => {
       return c.json({ error: 'Access denied: Guardian not linked to this student', code: 'FORBIDDEN' }, 403);
     }
   } else if (membership.role === 'student') {
-    const student = db.get("SELECT user_id FROM students WHERE id = ?", [studentId]);
+    const student = await db.get("SELECT user_id FROM students WHERE id = ?", [studentId]);
     if (!student || student.user_id !== user.id) {
       return c.json({ error: 'Access denied: You may only view your own attendance', code: 'FORBIDDEN' }, 403);
     }
   }
 
-  const history = db.all(
+  const history = await db.all(
     `SELECT ar.id, ar.status, ar.remarks, ar.edit_reason,
             s.date, s.period, b.name AS batch_name, sub.name AS subject_name
      FROM attendance_records ar
@@ -329,7 +329,7 @@ attendanceRoutes.get('/student/:id', requireAuth(), (c) => {
     [studentId, centre.id]
   );
 
-  const stats = db.get(
+  const stats = await db.get(
     `SELECT 
        COUNT(*) AS total_sessions,
        SUM(CASE WHEN ar.status = 'present' THEN 1 ELSE 0 END) AS present_count,

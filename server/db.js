@@ -148,7 +148,45 @@ export async function initDatabase(dbPath = null) {
   return instance;
 }
 
-export function getDatabase() {
+let activeD1 = null;
+
+export function setActiveD1(d1) {
+  if (!d1) return;
+  activeD1 = d1;
+  kind = 'cloudflare:d1';
+  currentDbFile = 'cloudflare:d1';
+}
+
+function makeD1Driver(d1) {
+  return {
+    kind: 'cloudflare:d1',
+    async exec(sql) {
+      return await d1.exec(sql);
+    },
+    async run(sql, params = []) {
+      const res = await d1.prepare(sql).bind(...params).run();
+      return {
+        changes: res.meta?.changes ?? 0,
+        lastInsertRowid: res.meta?.last_row_id ?? 0,
+      };
+    },
+    async all(sql, params = []) {
+      const res = await d1.prepare(sql).bind(...params).all();
+      return res.results ?? [];
+    },
+    async get(sql, params = []) {
+      const res = await d1.prepare(sql).bind(...params).first();
+      return res ?? null;
+    },
+    close() {}
+  };
+}
+
+export function getDatabase(c = null) {
+  const d1 = c?.env?.DB || activeD1;
+  if (d1) {
+    return makeD1Driver(d1);
+  }
   if (!instance) {
     throw new Error('Database not initialized. Call initDatabase() first.');
   }
@@ -160,7 +198,7 @@ export function getDatabaseStatus() {
     driver: kind,
     file: currentDbFile,
     durable: currentDbFile !== ':memory:',
-    ready: !!instance,
+    ready: !!(instance || activeD1),
   };
 }
 

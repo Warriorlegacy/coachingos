@@ -1,8 +1,13 @@
 // server/worker.js - Cloudflare Workers Edge Entrypoint
 import { createApp } from './app.js';
+import { setActiveD1 } from './db.js';
 
 export default {
   async fetch(request, env, ctx) {
+    if (env.DB) {
+      setActiveD1(env.DB);
+    }
+
     const app = createApp();
     const url = new URL(request.url);
 

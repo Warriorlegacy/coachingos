@@ -7,7 +7,7 @@ import { generateId } from '../crypto.js';
 export const assessmentRoutes = new Hono();
 
 // List Assessments
-assessmentRoutes.get('/', requireAuth(), (c) => {
+assessmentRoutes.get('/', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const user = c.get('user');
   const membership = c.get('membership');
@@ -41,14 +41,14 @@ assessmentRoutes.get('/', requireAuth(), (c) => {
   }
 
   sql += ` GROUP BY asm.id ORDER BY asm.assessment_date DESC`;
-  const assessments = db.all(sql, params);
+  const assessments = await db.all(sql, params);
 
   // If student, attach their own score
   if (membership.role === 'student') {
-    const student = db.get("SELECT id FROM students WHERE user_id = ?", [user.id]);
+    const student = await db.get("SELECT id FROM students WHERE user_id = ?", [user.id]);
     if (student) {
       for (const a of assessments) {
-        const sc = db.get("SELECT marks_obtained, is_absent, is_exempt, teacher_comments FROM assessment_scores WHERE assessment_id = ? AND student_id = ?", [a.id, student.id]);
+        const sc = await db.get("SELECT marks_obtained, is_absent, is_exempt, teacher_comments FROM assessment_scores WHERE assessment_id = ? AND student_id = ?", [a.id, student.id]);
         a.myScore = sc || null;
       }
     }
@@ -75,7 +75,7 @@ assessmentRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_a
     return c.json({ error: 'Passing marks must be between 0 and maximum marks', code: 'INVALID_MARKS_RANGE' }, 400);
   }
 
-  const batch = db.get("SELECT subject_id FROM batches WHERE id = ? AND centre_id = ?", [batchId, centre.id]);
+  const batch = await db.get("SELECT subject_id FROM batches WHERE id = ? AND centre_id = ?", [batchId, centre.id]);
   if (!batch) {
     return c.json({ error: 'Batch not found', code: 'NOT_FOUND' }, 404);
   }
@@ -83,25 +83,25 @@ assessmentRoutes.post('/', requireAuth(), requireRole(['centre_owner', 'centre_a
   const asmId = generateId('asm');
   const now = new Date().toISOString();
 
-  db.run(
+  await db.run(
     `INSERT INTO assessments (id, centre_id, batch_id, title, subject_id, assessment_date, max_marks, passing_marks, instructions, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [asmId, centre.id, batchId, title.trim(), subjectId || batch.subject_id, assessmentDate, numMax, numPass, instructions || null, now]
   );
 
-  const created = db.get("SELECT * FROM assessments WHERE id = ?", [asmId]);
+  const created = await db.get("SELECT * FROM assessments WHERE id = ?", [asmId]);
   return c.json({ assessment: created }, 201);
 });
 
 // Get Assessment Details & Scores
-assessmentRoutes.get('/:id', requireAuth(), (c) => {
+assessmentRoutes.get('/:id', requireAuth(), async (c) => {
   const centre = c.get('centre');
   const user = c.get('user');
   const membership = c.get('membership');
   const asmId = c.req.param('id');
   const db = getDatabase();
 
-  const assessment = db.get(
+  const assessment = await db.get(
     `SELECT asm.*, b.name AS batch_name, sub.name AS subject_name
      FROM assessments asm
      JOIN batches b ON b.id = asm.batch_id
@@ -115,7 +115,7 @@ assessmentRoutes.get('/:id', requireAuth(), (c) => {
   }
 
   // Get active roster for this batch
-  const roster = db.all(
+  const roster = await db.all(
     `SELECT s.id AS student_id, s.admission_no, s.first_name, s.last_name,
             sc.id AS score_id, sc.marks_obtained, sc.is_absent, sc.is_exempt, sc.teacher_comments
      FROM enrollments e
@@ -129,19 +129,16 @@ assessmentRoutes.get('/:id', requireAuth(), (c) => {
   // If student or parent, restrict scores to self/child
   let studentScores = roster;
   if (membership.role === 'student') {
-    studentScores = roster.filter(r => {
-      const stu = db.get("SELECT id FROM students WHERE user_id = ?", [user.id]);
-      return stu && r.student_id === stu.id;
-    });
+    const stu = await db.get("SELECT id FROM students WHERE user_id = ?", [user.id]);
+    studentScores = roster.filter(r => stu && r.student_id === stu.id);
   } else if (membership.role === 'parent_guardian') {
-    const linkedStudentIds = new Set(
-      db.all(
-        `SELECT sg.student_id FROM student_guardians sg
-         JOIN guardians g ON g.id = sg.guardian_id
-         WHERE g.user_id = ?`,
-        [user.id]
-      ).map(r => r.student_id)
+    const linkedRows = await db.all(
+      `SELECT sg.student_id FROM student_guardians sg
+       JOIN guardians g ON g.id = sg.guardian_id
+       WHERE g.user_id = ?`,
+      [user.id]
     );
+    const linkedStudentIds = new Set(linkedRows.map(r => r.student_id));
     studentScores = roster.filter(r => linkedStudentIds.has(r.student_id));
   }
 
@@ -163,7 +160,7 @@ assessmentRoutes.post('/:id/scores', requireAuth(), requireRole(['centre_owner',
     return c.json({ error: 'scores array is required', code: 'INVALID_INPUT' }, 400);
   }
 
-  const assessment = db.get("SELECT max_marks FROM assessments WHERE id = ?", [asmId]);
+  const assessment = await db.get("SELECT max_marks FROM assessments WHERE id = ?", [asmId]);
   if (!assessment) {
     return c.json({ error: 'Assessment not found', code: 'NOT_FOUND' }, 404);
   }
@@ -186,16 +183,16 @@ assessmentRoutes.post('/:id/scores', requireAuth(), requireRole(['centre_owner',
       }
     }
 
-    const existing = db.get("SELECT id FROM assessment_scores WHERE assessment_id = ? AND student_id = ?", [asmId, studentId]);
+    const existing = await db.get("SELECT id FROM assessment_scores WHERE assessment_id = ? AND student_id = ?", [asmId, studentId]);
 
     if (!existing) {
-      db.run(
+      await db.run(
         `INSERT INTO assessment_scores (id, assessment_id, student_id, marks_obtained, is_absent, is_exempt, teacher_comments, recorded_by, recorded_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [generateId('as'), asmId, studentId, marks, isAbsent, isExempt, s.teacherComments || null, user.id, now]
       );
     } else {
-      db.run(
+      await db.run(
         `UPDATE assessment_scores
          SET marks_obtained = ?, is_absent = ?, is_exempt = ?, teacher_comments = ?, recorded_by = ?, recorded_at = ?
          WHERE id = ?`,
