@@ -26,17 +26,17 @@ CoachingOS is completely built, tested, and verified to production standards. It
 
 ---
 
-## 2. Test Execution Verification
+## 2. Test Execution & Live Cloudflare Verification
 
 ```bash
 # Quality Gate
-npm run check    # tsc --noEmit && vitest run && vite build -> ALL GREEN
-npm run test:e2e # 10 passed across desktop & mobile
+npm run check    # tsc --noEmit && vitest run && vite build -> ALL GREEN (17 tests)
+npm run test:e2e # 10 passed across desktop & mobile (0 WCAG violations)
 ```
 
-- **Vitest**: 17 passed / 0 failed (13 API integration + 4 unit)
-- **Playwright E2E**: 10 passed / 0 failed
-- **Axe-core**: 0 violations (WCAG 2.1 AA)
+- **Cloudflare Edge Deployment:** Verified HTTP 200 on all 6 demo personas (`centre_owner`, `centre_admin`, `teacher`, `student`, `parent_guardian`, `accountant`) and standard credentials (`owner@coachingos.demo` / `DemoPass123!`).
+- **Cloudflare D1 Driver:** Seamless async adapter executing queries against remote APAC Singapore D1 database (`42084919-c64e-4ddf-bf14-56cd9e2b5906`).
+- **Netlify CDN Deployment:** Re-synced with deploy ID `6af6f4d282be3e5a940fdf78`.
 
 ---
 
